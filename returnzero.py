@@ -93,10 +93,10 @@ print(f"Total transcription processing time: {total_processing_time:.2f} seconds
 
 # Extracting and formatting the data
 utterances = status_data['results']['utterances']
-combined_msg = ' '.join(f"Speaker {utterance['spk']}: {utterance['msg']}" for utterance in utterances)
+combined_msg = ' '.join(f"{utterance['msg']}" for utterance in utterances)
 
 # Saving the formatted message to a file
-output_file = "transcription_result.txt"
+output_file = "stt.txt"
 with open(output_file, "w", encoding="utf-8") as file:
     file.write(combined_msg)
 
