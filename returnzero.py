@@ -11,6 +11,7 @@ import time
 client_id = os.getenv("RT_CLIENT_ID")
 client_secret = os.getenv("RT_CLIENT_SECRET")
 transcribe_file = os.getenv("TRSC_FILE")
+print(f"transcribe_file: {transcribe_file}")
 
 # Measure time for authentication request
 start_time = time.time()
