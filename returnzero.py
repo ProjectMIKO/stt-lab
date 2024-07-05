@@ -30,18 +30,15 @@ accessToken = resp.json()['access_token']
 print(f"Access Token: {accessToken}")
 
 config = {
-    "use_diarization": False,
-    # "diarization": {
-    #     "spk_count": 5
-    # },
-    "use_itn": False,
-    "use_disfluency_filter": False,
-    "use_profanity_filter": False,
-    "use_paragraph_splitter": False,
-    "paragraph_splitter": {
-        "max": 50
-    }
+            'domain': 'CALL',
+            "use_diarization": False,
+            "use_itn": True,
+            "use_disfluency_filter": False,
+            "use_profanity_filter": False,
+            "use_paragraph_splitter": False,
+            "paragraph_splitter": {"max": 50}
 }
+
 
 # Measure time for transcription request submission
 start_time = time.time()
