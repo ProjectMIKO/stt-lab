@@ -1,38 +1,99 @@
-from pydub import AudioSegment
-from pydub.generators import Sine
-from pydub.effects import high_pass_filter, low_pass_filter
-import numpy as np
+import sys
+import time
+import torchaudio
 import scipy.signal as signal
+import torch
 
-def apply_equalization(audio):
+def high_pass_filter(waveform, sample_rate, cutoff=100):
+    nyquist = 0.5 * sample_rate
+    norm_cutoff = cutoff / nyquist
+    b, a = signal.butter(1, norm_cutoff, btype='high', analog=False)
+    filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
+    return filtered_waveform
+
+def low_pass_filter(waveform, sample_rate, cutoff=10000):
+    nyquist = 0.5 * sample_rate
+    norm_cutoff = cutoff / nyquist
+    b, a = signal.butter(1, norm_cutoff, btype='low', analog=False)
+    filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
+    return filtered_waveform
+
+def band_stop_filter(waveform, sample_rate, low_cutoff, high_cutoff):
+    nyquist = 0.5 * sample_rate
+    low = low_cutoff / nyquist
+    high = high_cutoff / nyquist
+    b, a = signal.butter(1, [low, high], btype='bandstop', analog=False)
+    filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
+    return filtered_waveform
+
+def band_pass_filter(waveform, sample_rate, low_cutoff, high_cutoff, gain=1.0):
+    nyquist = 0.5 * sample_rate
+    low = low_cutoff / nyquist
+    high = high_cutoff / nyquist
+    b, a = signal.butter(1, [low, high], btype='band', analog=False)
+    filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
+    return filtered_waveform
+  
+def normalize_volume(waveform, target_dB=-20.0):
+    rms = (waveform ** 2).mean() ** 0.5
+    scalar = 10 ** (target_dB / 20) / rms
+    normalized_waveform = waveform * scalar
+    return normalized_waveform
+
+def process_with_torchaudio(input_path, output_path):
+    start_time = time.time()
+    
+    # 오디오 파일 로드
+    waveform, sample_rate = torchaudio.load(input_path)
+    
+    # numpy 배열로 변환
+    waveform_np = waveform.numpy()
+    
     # 100Hz 이하 하이패스 필터
-    audio = high_pass_filter(audio, 100)
+    waveform_filtered = high_pass_filter(waveform_np, sample_rate, 100)
     
-    # 300Hz 이하 영역 감소
-    audio = audio.low_pass_filter(300)
+    # 100~300Hz 영역 감소 (저역 필터)
+    waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 100, 300)
     
-    # 300~500Hz 영역 감소 (환경 울림/반사음)
-    audio = audio.band_stop_filter(300, 500)
+    # 300~500Hz 영역 감소 (울림/반사음 필터)
+    waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 300, 500)
     
-    # 1~4kHz 영역 부스트 (목소리의 존재감)
-    audio = audio.apply_gain_stereo(1000, 4000, 5)
+    # 1~4kHz 영역 부스트 (목소리의 존재감 부스트)
+    waveform_filtered = band_pass_filter(waveform_filtered, sample_rate, 1000, 4000, gain=1.3)
     
-    # 4~6kHz 영역 부스트 (명료함)
-    audio = audio.apply_gain_stereo(4000, 6000, 5)
+    # 4~6kHz 영역 부스트 (명료함 부스트)
+    waveform_filtered = band_pass_filter(waveform_filtered, sample_rate, 4000, 6000, gain=1.5)
     
-    # 6~10kHz 영역 부스트 (치찰음)
-    audio = audio.apply_gain_stereo(6000, 10000, 3)
+    # 6~10kHz 영역 부스트 (치찰음 감소)
+    waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 6000, 10000)
     
     # 10~20kHz 로우패스 필터
-    audio = low_pass_filter(audio, 10000)
+    waveform_filtered = low_pass_filter(waveform_filtered, sample_rate, 10000)
     
-    return audio
-
+    # 음량 조정
+    waveform_filtered = normalize_volume(waveform_filtered)
+    
+    # tensor로 다시 변환 (float32 형식 유지)
+    filtered_waveform = torch.tensor(waveform_filtered, dtype=torch.float32)
+    
+    # 필터 적용된 오디오 파일 저장
+    torchaudio.save(output_path, filtered_waveform, sample_rate)
+    
+    duration = time.time() - start_time
+    print(f"torchaudio processing time: {duration} seconds")
+    
+    return duration
+  
+  
 # 오디오 파일 로드
-audio = AudioSegment.from_file("input.wav")
+if len(sys.argv) < 2:
+  print("Please provide the input audio file as a command line argument.")
+  sys.exit(1)
 
-# 이퀄라이징 적용
-equalized_audio = apply_equalization(audio)
+input_file = sys.argv[1]
+output_filename = input_file.replace(".wav", "_eq.wav")
 
-# 수정된 오디오 파일 저장
-equalized_audio.export("output.wav", format="wav")
+# torchaudio를 사용하여 오디오 처리
+duration = process_with_torchaudio(input_file, output_filename)
+
+print(f"torchaudio processing time: {duration} seconds")
