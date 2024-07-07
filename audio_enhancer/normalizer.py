@@ -2,7 +2,6 @@ import sys
 import time
 import torch
 import torchaudio
-import torchaudio.sox_effects as sox_effects
 
 # 오디오 파일 로드
 def load_audio(file_path):
@@ -23,16 +22,27 @@ def adjust_volume(waveform, target_dB=-20.0):
     scalar = (10 ** (target_dB / 20)) / (rms + 1e-10)
     return waveform * scalar
 
-# 컴프레서 효과 적용
-def apply_compressor(waveform, sample_rate, threshold=-20, ratio=2.0, attack=50, release=200):
-    effects = [
-        ["compand", str(attack), str(threshold) + ":" + str(threshold), str(ratio), str(attack) + ":" + str(release)]
-    ]
-    waveform, _ = sox_effects.apply_effects_tensor(waveform, sample_rate, effects)
+# 작은 부분 증폭
+def amplify_soft_parts(waveform, sample_rate, threshold=-40.0, gain=10.0):
+    threshold_linear = 10 ** (threshold / 20)
+    gain_factor = 10 ** (gain / 20)
+    
+    frame_size = int(sample_rate * 0.02)  # 20ms 프레임
+    num_frames = waveform.size(1) // frame_size
+    
+    for i in range(num_frames):
+        frame_start = i * frame_size
+        frame_end = frame_start + frame_size
+        frame = waveform[:, frame_start:frame_end]
+        rms = frame.pow(2).mean().sqrt()
+        
+        if rms < threshold_linear:
+            waveform[:, frame_start:frame_end] *= gain_factor
+            
     return waveform
 
 # 오디오 정규화 함수
-def normalize_audio(file_path, target_dB=-20.0, threshold=-20, ratio=2.0, attack=50, release=200):
+def normalize_audio(file_path, target_dB=-20.0, threshold=-20.0, gain=20.0):
     waveform, sample_rate = load_audio(file_path)
     
     # DC 오프셋 제거
@@ -44,8 +54,8 @@ def normalize_audio(file_path, target_dB=-20.0, threshold=-20, ratio=2.0, attack
     # 소리 크기 조정
     waveform = adjust_volume(waveform, target_dB)
     
-    # 컴프레서 효과 적용
-    waveform = apply_compressor(waveform, sample_rate, threshold, ratio, attack, release)
+    # 작은 소리 증폭
+    waveform = amplify_soft_parts(waveform, sample_rate, threshold, gain)
     
     return waveform, sample_rate
 
