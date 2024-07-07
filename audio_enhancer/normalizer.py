@@ -1,92 +1,75 @@
-import torchaudio
-import torch
 import sys
 import time
+import torch
+import torchaudio
+import torchaudio.sox_effects as sox_effects
 
-def rms_normalize(waveform, target_dB=-20.0):
-    rms = (waveform ** 2).mean().sqrt()
-    scalar = 10 ** (target_dB / 20) / rms
+# 오디오 파일 로드
+def load_audio(file_path):
+    waveform, sample_rate = torchaudio.load(file_path)
+    return waveform, sample_rate
+
+# DC 오프셋 제거
+def correct_dc_offset(waveform):
+    return waveform - waveform.mean()
+
+# 피크 정규화
+def peak_normalize(waveform):
+    return waveform / torch.max(torch.abs(waveform))
+
+# 소리 크기 조정
+def adjust_volume(waveform, target_dB=-20.0):
+    rms = waveform.pow(2).mean().sqrt()
+    scalar = (10 ** (target_dB / 20)) / (rms + 1e-10)
     return waveform * scalar
 
-def amplitude_to_db(waveform):
-    return 20.0 * torch.log10(torch.clamp(waveform, min=1e-10))
+# 컴프레서 효과 적용
+def apply_compressor(waveform, sample_rate, threshold=-20, ratio=2.0, attack=50, release=200):
+    effects = [
+        ["compand", str(attack), str(threshold) + ":" + str(threshold), str(ratio), str(attack) + ":" + str(release)]
+    ]
+    waveform, _ = sox_effects.apply_effects_tensor(waveform, sample_rate, effects)
+    return waveform
 
-def db_to_amplitude(db_waveform):
-    return torch.pow(10.0, db_waveform / 20.0)
-
-def dynamic_range_compression(waveform, threshold_dB=-35.0, ratio=2.0):
-    waveform_db = amplitude_to_db(waveform)
+# 오디오 정규화 함수
+def normalize_audio(file_path, target_dB=-20.0, threshold=-20, ratio=2.0, attack=50, release=200):
+    waveform, sample_rate = load_audio(file_path)
     
-    # Apply compression
-    compressed_db = torch.where(
-        waveform_db > threshold_dB,
-        threshold_dB + (waveform_db - threshold_dB) / ratio,
-        waveform_db
-    )
+    # DC 오프셋 제거
+    waveform = correct_dc_offset(waveform)
     
-    compressed_waveform = db_to_amplitude(compressed_db)
-    return compressed_waveform
-
-def dynamic_range_expansion(waveform, threshold_dB=-50.0, ratio=2.0):
-    waveform_db = amplitude_to_db(waveform)
+    # 피크 정규화
+    waveform = peak_normalize(waveform)
     
-    # Apply expansion
-    expanded_db = torch.where(
-        waveform_db < threshold_dB,
-        threshold_dB - (threshold_dB - waveform_db) * ratio,
-        waveform_db
-    )
+    # 소리 크기 조정
+    waveform = adjust_volume(waveform, target_dB)
     
-    expanded_waveform = db_to_amplitude(expanded_db)
-    return expanded_waveform
+    # 컴프레서 효과 적용
+    waveform = apply_compressor(waveform, sample_rate, threshold, ratio, attack, release)
+    
+    return waveform, sample_rate
 
-def soft_clipping(waveform, threshold=0.8):
-    return torch.tanh(waveform / threshold) * threshold
-
-def apply_compression(input_path, output_path, target_dB=-20.0, compression_threshold_dB=-35.0, compression_ratio=2.0, expansion_threshold_dB=-50.0, expansion_ratio=2.0, limit=0.8):
+# 오디오 파일 처리 및 시간 측정
+def process_with_torchaudio(input_file, output_file):
     start_time = time.time()
     
-    # Load the audio file
-    waveform, sample_rate = torchaudio.load(input_path)
+    normalized_waveform, sample_rate = normalize_audio(input_file)
     
-    # Normalize the RMS
-    waveform_normalized = rms_normalize(waveform, target_dB)
+    # 정규화된 오디오 저장
+    torchaudio.save(output_file, normalized_waveform, sample_rate)
     
-    # Apply dynamic range compression
-    waveform_compressed = dynamic_range_compression(waveform_normalized, compression_threshold_dB, compression_ratio)
-    
-    # Apply dynamic range expansion
-    waveform_expanded = dynamic_range_expansion(waveform_compressed, expansion_threshold_dB, expansion_ratio)
-    
-    # Apply soft clipping to avoid excessive peaks
-    waveform_clipped = soft_clipping(waveform_expanded, limit)
-    
-    # Save the result
-    torchaudio.save(output_path, waveform_clipped, sample_rate)
-
     duration = time.time() - start_time
-    print(f"Normalized processing time: {duration} seconds")
-
     return duration
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Please provide the input audio file as a command line argument.")
-        sys.exit(1)
+# 커맨드 라인 인자 처리
+if len(sys.argv) < 2:
+    print("Please provide the input audio file as a command line argument.")
+    sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = input_file.replace(".wav", "_normalized.wav")
+input_file = sys.argv[1]
+output_filename = input_file.replace(".wav", "_nr.wav")
 
-    # Adjust these parameters as needed
-    target_dB = -10.0
-    compression_threshold_dB = -25.0
-    compression_ratio = 2.0
-    expansion_threshold_dB = -40.0
-    expansion_ratio = 2.0
-    limit = 0.5
+# torchaudio를 사용하여 오디오 처리
+duration = process_with_torchaudio(input_file, output_filename)
 
-    # Apply compression and expansion to equalize volume
-    duration = apply_compression(input_file, output_file, target_dB, compression_threshold_dB, compression_ratio, expansion_threshold_dB, expansion_ratio, limit)
-
-    print(f"Total normalized processing time: {duration} seconds")
-    print(f"Processed file saved to: {output_file}")
+print(f"torchaudio processing time: {duration} seconds")
