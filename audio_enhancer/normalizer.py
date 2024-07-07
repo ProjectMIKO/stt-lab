@@ -28,7 +28,7 @@ def limit_peak(waveform, peak_limit=0.9):
     return waveform
 
 # 부드러운 증폭 적용
-def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_time=0.5, fade_length=1000):
+def smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_length):
     threshold_linear = 10 ** (threshold / 20)
     gain_factor = 10 ** (gain / 20)
     
@@ -60,9 +60,9 @@ def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_ti
             frame *= frame_gain
             
             if sustain_counter == sustain_frames:
-                # 페이드아웃 적용
+                # 지수 감쇠 적용
                 fade_out_len = min(fade_length, frame_size)
-                fade_out = torch.linspace(1, 0, fade_out_len)
+                fade_out = torch.exp(-torch.linspace(0, 5, fade_out_len))
                 frame[:, -fade_out_len:] *= fade_out.unsqueeze(0)
                 sustain_counter = 0  # 증폭 유지 시간 초기화
             else:
@@ -78,7 +78,7 @@ def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_ti
     return smoothed_waveform
 
 # 오디오 정규화 함수
-def normalize_audio(file_path, target_dB=-20.0, threshold=-40.0, gain=10.0, sustain_time=0.5, fade_length=2000, peak_limit=0.1):
+def normalize_audio(file_path, target_dB=-30.0, threshold=-20.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
     waveform, sample_rate = load_audio(file_path)
     
     # DC 오프셋 제거
