@@ -34,9 +34,9 @@ def band_pass_filter(waveform, sample_rate, low_cutoff, high_cutoff, gain=1.0):
     filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
     return filtered_waveform
   
-def normalize_volume(waveform, target_dB=-20.0):
-    rms = (waveform ** 2).mean() ** 0.5
-    scalar = 10 ** (target_dB / 20) / rms
+def volume_up_peak(waveform, peak_value=0.9):
+    peak = torch.max(torch.abs(waveform))
+    scalar = peak_value / peak
     normalized_waveform = waveform * scalar
     return normalized_waveform
 
@@ -71,7 +71,7 @@ def process_with_torchaudio(input_path, output_path):
     waveform_filtered = low_pass_filter(waveform_filtered, sample_rate, 10000)
     
     # 음량 조정
-    waveform_filtered = normalize_volume(waveform_filtered)
+    waveform_filtered = volume_up_peak(torch.tensor(waveform_filtered, dtype=torch.float32))
     
     # tensor로 다시 변환 (float32 형식 유지)
     filtered_waveform = torch.tensor(waveform_filtered, dtype=torch.float32)
