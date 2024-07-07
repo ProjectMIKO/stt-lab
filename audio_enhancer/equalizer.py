@@ -54,22 +54,22 @@ def process_with_torchaudio(input_path, output_path):
     waveform_filtered = high_pass_filter(waveform_filtered, sample_rate, 100)
     
     # 100~300Hz 영역 
-    waveform_filtered = band_pass_filter(waveform_filtered, sample_rate, 100, 300, gain=1.0)
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 100, 300, gain=1.0)
     
     # 300~500Hz 영역 감소 (울림/반사음 필터)
     waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 300, 500)
     
     # 500~1kHz 영역 부스팅 (목소리의 풍부함 부스트)
-    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 500, 1000, gain=1.0)
+    # waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 500, 1000, gain=0.5)
     
     # 1~4kHz 영역 부스트 (목소리의 존재감 부스트)
-    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 1000, 4000, gain=1.0)
+    # waveform_filtered -= band_pass_filter(waveform_filtered, sample_rate, 1000, 4000, gain=0.5)
     
     # 4~6kHz 영역 부스트 (명료함 부스트)
-    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 4000, 6000, gain=5)
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 4000, 6000, gain=2)
     
     # 6~10kHz 영역 부스트 (치찰음)
-    waveform_filtered -= band_pass_filter(waveform_filtered, sample_rate, 6000, 8000, gain=2)
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 6000, 8000, gain=1)
     
     # 10~20kHz 로우패스 필터
     waveform_filtered = low_pass_filter(waveform_filtered, sample_rate, 10000)
