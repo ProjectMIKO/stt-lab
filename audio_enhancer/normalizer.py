@@ -22,8 +22,13 @@ def adjust_volume(waveform, target_dB=-20.0):
     scalar = (10 ** (target_dB / 20)) / (rms + 1e-10)
     return waveform * scalar
 
+# 최대 피크 값 제한
+def limit_peak(waveform, peak_limit=0.9):
+    waveform = torch.clamp(waveform, -peak_limit, peak_limit)
+    return waveform
+
 # 부드러운 증폭 적용
-def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_time=0.2, fade_length=1000):
+def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_time=0.5, fade_length=1000):
     threshold_linear = 10 ** (threshold / 20)
     gain_factor = 10 ** (gain / 20)
     
@@ -67,10 +72,13 @@ def smooth_amplify(waveform, sample_rate, threshold=-40.0, gain=10.0, sustain_ti
         else:
             sustain_counter = 0  # 증폭 유지 시간 초기화
     
+    # 최대 피크 값 제한
+    smoothed_waveform = limit_peak(smoothed_waveform)
+    
     return smoothed_waveform
 
 # 오디오 정규화 함수
-def normalize_audio(file_path, target_dB=-20.0, threshold=-25.0, gain=30.0, sustain_time=0.5, fade_length=500):
+def normalize_audio(file_path, target_dB=-20.0, threshold=-40.0, gain=10.0, sustain_time=0.5, fade_length=2000, peak_limit=0.1):
     waveform, sample_rate = load_audio(file_path)
     
     # DC 오프셋 제거
@@ -84,6 +92,9 @@ def normalize_audio(file_path, target_dB=-20.0, threshold=-25.0, gain=30.0, sust
     
     # 부드러운 증폭 적용
     waveform = smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_length)
+    
+    # 최대 피크 값 제한
+    waveform = limit_peak(waveform, peak_limit)
     
     return waveform, sample_rate
 
