@@ -10,7 +10,7 @@ def load_audio(file_path):
 
 # DC 오프셋 제거
 def correct_dc_offset(waveform):
-    return waveform - waveform.mean()
+    return waveform - waveform.mean(dim=-1, keepdim=True)
 
 # 피크 정규화
 def peak_normalize(waveform):
@@ -78,7 +78,7 @@ def smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_le
     return smoothed_waveform
 
 # 오디오 정규화 함수
-def normalize_audio(file_path, target_dB=-30.0, threshold=-20.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
+def normalize_audio(file_path, target_dB=-20.0, threshold=-30.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
     waveform, sample_rate = load_audio(file_path)
     
     # DC 오프셋 제거

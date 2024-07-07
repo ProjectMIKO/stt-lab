@@ -11,10 +11,10 @@ def load_audio(file_path):
     return waveform, sample_rate
 
 def correct_dc_offset(waveform):
-    return waveform - waveform.mean()
+    return waveform - waveform.mean(dim=-1, keepdim=True)
 
-def peak_normalize(waveform):
-    return waveform / torch.max(torch.abs(waveform))
+def peak_normalize(waveform, peak_value=0.95):
+    return waveform / torch.max(torch.abs(waveform)) * peak_value
 
 def adjust_volume(waveform, target_dB=-20.0):
     rms = waveform.pow(2).mean().sqrt()
@@ -74,7 +74,7 @@ def smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_le
     
     return smoothed_waveform
 
-def normalize_audio(file_path, target_dB=-30.0, threshold=-20.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
+def normalize_audio(file_path, target_dB=-20.0, threshold=-30.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
     waveform, sample_rate = load_audio(file_path)
     
     # DC 오프셋 제거
