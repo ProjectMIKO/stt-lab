@@ -1,92 +1,124 @@
-import torchaudio
-import torch
 import sys
 import time
+import torch
+import torchaudio
 
-def rms_normalize(waveform, target_dB=-20.0):
-    rms = (waveform ** 2).mean().sqrt()
-    scalar = 10 ** (target_dB / 20) / rms
+# 오디오 파일 로드
+def load_audio(file_path):
+    waveform, sample_rate = torchaudio.load(file_path)
+    return waveform, sample_rate
+
+# DC 오프셋 제거
+def correct_dc_offset(waveform):
+    return waveform - waveform.mean(dim=-1, keepdim=True)
+
+# 피크 정규화
+def peak_normalize(waveform):
+    return waveform / torch.max(torch.abs(waveform))
+
+# 소리 크기 조정
+def adjust_volume(waveform, target_dB=-20.0):
+    rms = waveform.pow(2).mean().sqrt()
+    scalar = (10 ** (target_dB / 20)) / (rms + 1e-10)
     return waveform * scalar
 
-def amplitude_to_db(waveform):
-    return 20.0 * torch.log10(torch.clamp(waveform, min=1e-10))
+# 최대 피크 값 제한
+def limit_peak(waveform, peak_limit=0.9):
+    waveform = torch.clamp(waveform, -peak_limit, peak_limit)
+    return waveform
 
-def db_to_amplitude(db_waveform):
-    return torch.pow(10.0, db_waveform / 20.0)
-
-def dynamic_range_compression(waveform, threshold_dB=-35.0, ratio=2.0):
-    waveform_db = amplitude_to_db(waveform)
+# 부드러운 증폭 적용
+def smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_length):
+    threshold_linear = 10 ** (threshold / 20)
+    gain_factor = 10 ** (gain / 20)
     
-    # Apply compression
-    compressed_db = torch.where(
-        waveform_db > threshold_dB,
-        threshold_dB + (waveform_db - threshold_dB) / ratio,
-        waveform_db
-    )
+    frame_size = int(sample_rate * 0.02)  # 20ms 프레임
+    sustain_frames = int(sustain_time * sample_rate / frame_size)  # 증폭 유지 시간
     
-    compressed_waveform = db_to_amplitude(compressed_db)
-    return compressed_waveform
-
-def dynamic_range_expansion(waveform, threshold_dB=-50.0, ratio=2.0):
-    waveform_db = amplitude_to_db(waveform)
+    num_frames = waveform.size(1) // frame_size
+    smoothed_waveform = waveform.clone()
     
-    # Apply expansion
-    expanded_db = torch.where(
-        waveform_db < threshold_dB,
-        threshold_dB - (threshold_dB - waveform_db) * ratio,
-        waveform_db
-    )
+    sustain_counter = 0
     
-    expanded_waveform = db_to_amplitude(expanded_db)
-    return expanded_waveform
+    for i in range(num_frames):
+        frame_start = i * frame_size
+        frame_end = frame_start + frame_size
+        frame = waveform[:, frame_start:frame_end]
+        rms = frame.pow(2).mean().sqrt()
+        
+        if rms < threshold_linear or sustain_counter > 0:
+            frame_gain = gain_factor * (threshold_linear / (rms + 1e-10))
+            frame_gain = min(frame_gain, gain_factor)  # 최대 gain_factor 이상 증폭하지 않도록 제한
+            
+            if sustain_counter == 0:
+                # 페이드인 적용
+                fade_in_len = min(fade_length, frame_size)
+                fade_in = torch.linspace(0, 1, fade_in_len)
+                frame[:, :fade_in_len] *= fade_in.unsqueeze(0)
+                
+            # 증폭 적용
+            frame *= frame_gain
+            
+            if sustain_counter == sustain_frames:
+                # 지수 감쇠 적용
+                fade_out_len = min(fade_length, frame_size)
+                fade_out = torch.exp(-torch.linspace(0, 5, fade_out_len))
+                frame[:, -fade_out_len:] *= fade_out.unsqueeze(0)
+                sustain_counter = 0  # 증폭 유지 시간 초기화
+            else:
+                sustain_counter += 1
+            
+            smoothed_waveform[:, frame_start:frame_end] = frame
+        else:
+            sustain_counter = 0  # 증폭 유지 시간 초기화
+    
+    # 최대 피크 값 제한
+    smoothed_waveform = limit_peak(smoothed_waveform)
+    
+    return smoothed_waveform
 
-def soft_clipping(waveform, threshold=0.8):
-    return torch.tanh(waveform / threshold) * threshold
+# 오디오 정규화 함수
+def normalize_audio(file_path, target_dB=-20.0, threshold=-30.0, gain=5.0, sustain_time=0.03, fade_length=15, peak_limit=0.9):
+    waveform, sample_rate = load_audio(file_path)
+    
+    # DC 오프셋 제거
+    waveform = correct_dc_offset(waveform)
+    
+    # 피크 정규화
+    waveform = peak_normalize(waveform)
+    
+    # 소리 크기 조정
+    waveform = adjust_volume(waveform, target_dB)
+    
+    # 부드러운 증폭 적용
+    waveform = smooth_amplify(waveform, sample_rate, threshold, gain, sustain_time, fade_length)
+    
+    # 최대 피크 값 제한
+    waveform = limit_peak(waveform, peak_limit)
+    
+    return waveform, sample_rate
 
-def apply_compression(input_path, output_path, target_dB=-20.0, compression_threshold_dB=-35.0, compression_ratio=2.0, expansion_threshold_dB=-50.0, expansion_ratio=2.0, limit=0.8):
+# 오디오 파일 처리 및 시간 측정
+def process_with_torchaudio(input_file, output_file):
     start_time = time.time()
     
-    # Load the audio file
-    waveform, sample_rate = torchaudio.load(input_path)
+    normalized_waveform, sample_rate = normalize_audio(input_file)
     
-    # Normalize the RMS
-    waveform_normalized = rms_normalize(waveform, target_dB)
+    # 정규화된 오디오 저장
+    torchaudio.save(output_file, normalized_waveform, sample_rate)
     
-    # Apply dynamic range compression
-    waveform_compressed = dynamic_range_compression(waveform_normalized, compression_threshold_dB, compression_ratio)
-    
-    # Apply dynamic range expansion
-    waveform_expanded = dynamic_range_expansion(waveform_compressed, expansion_threshold_dB, expansion_ratio)
-    
-    # Apply soft clipping to avoid excessive peaks
-    waveform_clipped = soft_clipping(waveform_expanded, limit)
-    
-    # Save the result
-    torchaudio.save(output_path, waveform_clipped, sample_rate)
-
     duration = time.time() - start_time
-    print(f"Normalized processing time: {duration} seconds")
-
     return duration
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Please provide the input audio file as a command line argument.")
-        sys.exit(1)
+# 커맨드 라인 인자 처리
+if len(sys.argv) < 2:
+    print("Please provide the input audio file as a command line argument.")
+    sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = input_file.replace(".wav", "_normalized.wav")
+input_file = sys.argv[1]
+output_filename = input_file.replace(".wav", "_nr.wav")
 
-    # Adjust these parameters as needed
-    target_dB = -10.0
-    compression_threshold_dB = -25.0
-    compression_ratio = 2.0
-    expansion_threshold_dB = -40.0
-    expansion_ratio = 2.0
-    limit = 0.5
+# torchaudio를 사용하여 오디오 처리
+duration = process_with_torchaudio(input_file, output_filename)
 
-    # Apply compression and expansion to equalize volume
-    duration = apply_compression(input_file, output_file, target_dB, compression_threshold_dB, compression_ratio, expansion_threshold_dB, expansion_ratio, limit)
-
-    print(f"Total normalized processing time: {duration} seconds")
-    print(f"Processed file saved to: {output_file}")
+print(f"torchaudio processing time: {duration} seconds")

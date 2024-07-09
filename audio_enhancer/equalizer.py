@@ -32,9 +32,10 @@ def band_pass_filter(waveform, sample_rate, low_cutoff, high_cutoff, gain=1.0):
     high = high_cutoff / nyquist
     b, a = signal.butter(1, [low, high], btype='band', analog=False)
     filtered_waveform = signal.lfilter(b, a, waveform, axis=-1)
+    filtered_waveform *= gain
     return filtered_waveform
   
-def volume_up_peak(waveform, peak_value=0.9):
+def volume_up_peak(waveform, peak_value=0.8):
     peak = torch.max(torch.abs(waveform))
     scalar = peak_value / peak
     normalized_waveform = waveform * scalar
@@ -47,25 +48,28 @@ def process_with_torchaudio(input_path, output_path):
     waveform, sample_rate = torchaudio.load(input_path)
     
     # numpy 배열로 변환
-    waveform_np = waveform.numpy()
+    waveform_filtered = waveform.numpy()
     
     # 100Hz 이하 하이패스 필터
-    waveform_filtered = high_pass_filter(waveform_np, sample_rate, 100)
+    waveform_filtered = high_pass_filter(waveform_filtered, sample_rate, 100)
     
-    # 100~300Hz 영역 감소 (저역 필터)
-    waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 100, 300)
+    # 100~300Hz 영역 
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 100, 300, gain=1.0)
     
     # 300~500Hz 영역 감소 (울림/반사음 필터)
     waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 300, 500)
     
+    # 500~1kHz 영역 부스팅 (목소리의 풍부함 부스트)
+    # waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 500, 1000, gain=0.5)
+    
     # 1~4kHz 영역 부스트 (목소리의 존재감 부스트)
-    waveform_filtered = band_pass_filter(waveform_filtered, sample_rate, 1000, 4000, gain=1.3)
+    # waveform_filtered -= band_pass_filter(waveform_filtered, sample_rate, 1000, 4000, gain=0.5)
     
     # 4~6kHz 영역 부스트 (명료함 부스트)
-    waveform_filtered = band_pass_filter(waveform_filtered, sample_rate, 4000, 6000, gain=1.5)
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 4000, 6000, gain=2)
     
-    # 6~10kHz 영역 부스트 (치찰음 감소)
-    waveform_filtered = band_stop_filter(waveform_filtered, sample_rate, 6000, 10000)
+    # 6~10kHz 영역 부스트 (치찰음)
+    waveform_filtered += band_pass_filter(waveform_filtered, sample_rate, 6000, 8000, gain=1)
     
     # 10~20kHz 로우패스 필터
     waveform_filtered = low_pass_filter(waveform_filtered, sample_rate, 10000)
