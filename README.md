@@ -2,6 +2,37 @@
 
 > STT 인식율 개선을 실험하는 레포지토리
 
+# 디렉토리 구조
+## audio_enhancer
+오디오 전처리 디렉토리
+```
+📦audio_enhancer
+ ┣ 📜audio_enhancer.py \\ 이퀄라이징과 소음제거 처리 파일
+ ┣ 📜audio_processing.py  \\ 모든 오디오 전처리 과정을 통합한 파일
+ ┣ 📜deep_filter_noise_remove.py \\ deepfilternet 으로 소음 제거를 하는 파일
+ ┣ 📜equalizer.py  \\ 이퀄라이징만 적용하는 파일
+ ┣ 📜noise_remove.py  \\ pydub으로 소음 제거를 하는 파일
+ ┣ 📜normalizer.py  \\ 오디오 정규화를 하는 파일
+ ┣ 📜trch.py  \\ 이퀄라이징 초기버
+ ┗ 📜vad.py  \\ 음성의 시작과 끝을 감지하고 음성부분만 잘라주는 파일
+```
+## nlp
+형태소 분석
+
+##stt
+stt 관련 파일 디렉토리
+```
+📦stt
+ ┣ 📜cer_nlptutti.py \\cer 측정 (정확도 측정) ref.txt 와 stt.txt를 비교
+ ┣ 📜ref.txt  \\ 정확도 비교할 원본 대사
+ ┣ 📜returnzero.py  \\ 리턴제로에 stt 요청하는 파일
+ ┗ 📜stt.txt  \\ 리턴제로 stt 결과
+```
+## voice_file
+음성파일
+
+-----
+# stt 실험 기록
 ### 설명
 - **환경**: 테스트 환경 (조용, 노래, 잡담 등)
 - **마이크**: 맥북, 윈도우, 줄마이크, 옹알거리기, 브라우저 마이크 잡음 제거 끄기
